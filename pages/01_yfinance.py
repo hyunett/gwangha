@@ -10,14 +10,14 @@ st.set_page_config(page_title="📈 글로벌 주식 트렌드", layout="wide")
 st.title("📈 글로벌 시가총액 TOP10 기업 주가 추이")
 st.markdown("💹 **최근 1년 간 주가와 누적 수익률을 시각화합니다.**")
 
-# 시가총액 기준 상위 10개 기업 정보 (2025 기준, yfinance 호환 티커 사용)
+# 시가총액 기준 상위 10개 기업 (yfinance 티커)
 company_info = {
     'Apple': 'AAPL',
     'Microsoft': 'MSFT',
     'Nvidia': 'NVDA',
     'Amazon': 'AMZN',
     'Alphabet (Google)': 'GOOGL',
-    'Berkshire Hathaway': 'BRK.B',  # yfinance용 표기법
+    'Berkshire Hathaway': 'BRK.B',
     'Meta': 'META',
     'Eli Lilly': 'LLY',
     'TSMC': 'TSM',
@@ -46,7 +46,7 @@ start_date = end_date - timedelta(days=365)
 with st.spinner("📥 주가 데이터를 불러오는 중입니다..."):
     data = yf.download(tickers, start=start_date, end=end_date)
 
-# 구조 처리
+# 데이터 구조 처리
 if isinstance(data.columns, pd.MultiIndex):
     if "Adj Close" in data.columns.levels[0]:
         df_raw = data["Adj Close"]
@@ -62,8 +62,11 @@ else:
 # 결측치 처리
 df_raw = df_raw.ffill()
 
+# ================================
 # 📊 주가 추이 시각화
+# ================================
 st.subheader("📉 주가 변화 (최근 1년)")
+
 fig1 = px.line(
     df_raw,
     x=df_raw.index,
@@ -75,23 +78,47 @@ fig1 = px.line(
 fig1.update_layout(hovermode="x unified")
 st.plotly_chart(fig1, use_container_width=True)
 
+# ================================
 # 📈 누적 수익률 계산
+# ================================
 returns = df_raw.pct_change().dropna()
 cumulative_returns = (1 + returns).cumprod() - 1
 
+# 빈 데이터 방어 코드
+if cumulative_returns.empty:
+    st.error("❌ 누적 수익률 데이터가 비어 있습니다. 다른 기간 또는 회사를 선택해 보세요.")
+    st.stop()
+
+# ================================
+# 🔧 long-form 변환 (에러 방지 핵심 부분)
+# ================================
+cum_long = cumulative_returns.reset_index().rename(columns={"index": "날짜"})
+cum_long = cum_long.melt(
+    id_vars="날짜",
+    var_name="종목",
+    value_name="누적 수익률"
+)
+
+# ================================
 # 📊 누적 수익률 시각화
+# ================================
 st.subheader("📈 누적 수익률 변화")
+
 fig2 = px.line(
-    cumulative_returns,
-    x=cumulative_returns.index,
-    y=cumulative_returns.columns,
-    labels={'value': '누적 수익률', 'index': '날짜'},
+    cum_long,
+    x="날짜",
+    y="누적 수익률",
+    color="종목",
+    labels={"누적 수익률": "누적 수익률", "날짜": "날짜"},
     title="누적 수익률 (%)",
 )
 fig2.update_yaxes(tickformat=".0%")
 fig2.update_layout(hovermode="x unified")
 st.plotly_chart(fig2, use_container_width=True)
 
-# 🔎 최근 수익률 비교 테이블
-st.subheader("📋 최근 수익률 비교 (Top5 기준일)")
+# ================================
+# 📋 최근 수익률 비교
+# ================================
+st.subheader("📋 최근 수익률 비교 (마지막 5일)")
+
 st.dataframe(cumulative_returns.tail().style.format("{:.2%}"))
